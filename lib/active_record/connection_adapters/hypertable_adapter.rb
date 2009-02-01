@@ -5,7 +5,10 @@ module ActiveRecord
   class Base
     def self.require_hypertools
       # Include the hypertools driver if one hasn't already been loaded
-      require_library_or_gem 'hypertools' unless defined? HyperSession
+      unless defined? Hypertable::ThriftClient
+        gem 'hypertable-thrift-client'
+        require_dependency 'thrift_client'
+      end
     end
 
     def self.hypertable_connection(config)
@@ -14,9 +17,9 @@ module ActiveRecord
 
       require_hypertools
 
-      connection = HyperSession.new(config[:executable], config[:configuration_file])
+      connection = Hypertable::ThriftClient.new(config[:host], config[:port])
 
-      ConnectionAdapters::HypertableAdapter.new(connection, logger, [config[:executable], config[:configuration_file]], config)
+      ConnectionAdapters::HypertableAdapter.new(connection, logger, config)
     end
   end
 
@@ -26,9 +29,9 @@ module ActiveRecord
       @@write_latency = 0.0
       cattr_accessor :read_latency, :write_latency
 
-      def initialize(connection, logger, connection_options, config)
+      def initialize(connection, logger, config)
         super(connection, logger)
-        @connection_options, @config = connection_options, config
+        @config = config
         @hypertable_column_names = {}
       end
 

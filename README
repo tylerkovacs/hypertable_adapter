@@ -23,63 +23,25 @@ integrate the two.
 Basic Hypertable Adapter Configuration
 ======================================
 
-TODO: Replace the following documentation when the Adapter is rewritten
-to use Thrift (instead of RICE).
-
 Before creating a HyperRecord class, you must declare a hypertable 
-connection in config/database.yml
+connection in config/database.yml.  HyperRecord communicates with 
+Hypertable using a Thrift Broker (see http://hypertable.org/documentation.html
+for details) which is part of the main Hypertable installation.  The 
+connection record in config/database.yml must identify the host name and 
+the port used by the Thrift Broker:
 
  hypertable:
    adapter: hypertable
-   executable: /opt/hypertable/current/bin/hypertable
-   configuration_file: config/environments/hypertable.cfg
+   host: localhost
+   port: 38080
 
 Or, if you need to do it in code outside of database.yml:
 
  ActiveRecord::Base.configurations['hypertable'] = {
    'adapter' => 'hypertable',
-   'executable' => '/opt/hypertable/current/bin/hypertable',
-   'configuration_file' => 'config/environments/hypertable.cfg'
+   'host' => 'localhost',
+   'port' => '38080'
  }
-
-The key named 'executable' refers to the absolute path of the Hypertable 
-client executable. The key named 'configuration_file' refers to the 
-relative path of the Hypertable client configuration file. This file tells 
-the client where to find the Hypertable cluster, specifies default 
-timeouts, etc.
-
- #
- # hypertable.cfg
- #
- # Global properties
- Hypertable.Request.Timeout=180
- #
- # HDFS Broker
- HdfsBroker.Port=38030
- HdfsBroker.fs.default.name=hdfs://localhost:9000
- HdfsBroker.Workers=20
- #
- # Local Broker
- DfsBroker.Local.Port=38030
- DfsBroker.Local.Root=fs/local
- #
- # DFS Broker - for clients
- DfsBroker.Host=localhost
- DfsBroker.Port=38030
- #
- # Hyperspace
- Hyperspace.Master.Host=localhost
- Hyperspace.Master.Port=38040
- Hyperspace.Master.Dir=hyperspace
- Hyperspace.Master.Workers=20
- #
- # Hypertable.Master
- Hypertable.Master.Host=localhost
- Hypertable.Master.Port=38050
- Hypertable.Master.Workers=20
- #
- # Hypertable.RangeServer
- Hypertable.RangeServer.Port=38060
 
 COPYRIGHT
 =========
