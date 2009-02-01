@@ -3,7 +3,7 @@ require 'active_record/connection_adapters/qualified_column'
 
 module ActiveRecord
   class Base
-    def self.require_hypertools
+    def self.require_hypertable_thrift_client
       # Include the hypertools driver if one hasn't already been loaded
       unless defined? Hypertable::ThriftClient
         gem 'hypertable-thrift-client'
@@ -13,10 +13,9 @@ module ActiveRecord
 
     def self.hypertable_connection(config)
       config = config.symbolize_keys
-      config[:configuration_file] = "#{RAILS_ROOT}/#{config[:configuration_file]}" if config[:configuration_file][0,1] != '/'
+      require_hypertable_thrift_client
 
-      require_hypertools
-
+      raise "Hypertable/ThriftBroker config missing :host" if !config[:host]
       connection = Hypertable::ThriftClient.new(config[:host], config[:port])
 
       ConnectionAdapters::HypertableAdapter.new(connection, logger, config)
@@ -28,6 +27,11 @@ module ActiveRecord
       @@read_latency = 0.0
       @@write_latency = 0.0
       cattr_accessor :read_latency, :write_latency
+
+      CELL_FLAG_DELETE_ROW = 0
+      CELL_FLAG_DELETE_COLUMN_FAMILY = 1
+      CELL_FLAG_DELETE_CELL = 2
+      CELL_FLAG_INSERT = 255
 
       def initialize(connection, logger, config)
         super(connection, logger)
@@ -81,10 +85,8 @@ module ActiveRecord
       def sanitize_conditions(options)
         case options[:conditions]
           when Hash
-            options[:add_include_array] ||= []
-            for key in options[:conditions].keys
-              options[:add_include_array] << [key, [options[:conditions][key]].flatten]
-            end
+            # requires Hypertable API to support query by arbitrary cell value
+            raise "HyperRecord does not support specifying conditions by Hash"
           when NilClass
             # do nothing
           else
@@ -93,54 +95,79 @@ module ActiveRecord
       end
 
       def execute_with_options(options)
-        @connection.clear_conditions
-        open_table(options[:table_name])
-
         # Rows can be specified using a number of different options:
         # row ranges (start_row and end_row)
+        options[:row_intervals] ||= []
+
         if options[:row_keys]
-          options[:row_keys].flatten.each{|rk| @connection.add_row(rk)}
+          options[:row_keys].flatten.each do |rk|
+            row_interval = Hypertable::ThriftGen::RowInterval.new
+            row_interval.start_row = rk
+            row_interval.start_inclusive = true
+            row_interval.end_row = rk
+            row_interval.end_inclusive = true
+            options[:row_intervals] << row_interval
+          end
         elsif options[:start_row]
           raise "missing :end_row" if !options[:end_row]
-          @connection.set_row_range(options[:start_row].to_s, options[:end_row])
-        end
 
-        # Default limit to 0 - which means return all rows
-        options[:limit] ||= 0
+          options[:start_inclusive] = options.has_key?(:start_inclusive) ? options[:start_inclusive] : true
+          options[:end_inclusive] = options.has_key?(:end_inclusive) ? options[:end_inclusive] : true
+
+          row_interval = Hypertable::ThriftGen::RowInterval.new
+          row_interval.start_row = options[:start_row]
+          row_interval.start_inclusive = options[:start_inclusive]
+          row_interval.end_row = options[:end_row]
+          row_interval.end_inclusive = options[:end_inclusive]
+          options[:row_intervals] << row_interval
+        end
 
         sanitize_conditions(options)
-
-        if options[:add_include_array]
-          for include_set in options[:add_include_array]
-            column_name, include_values = include_set
-            @connection.add_include_array(column_name.to_s, include_values)
-          end
-        end
-
-        if options[:add_exclude_array]
-          for exclude_set in options[:add_exclude_array]
-            column_name, exclude_values = exclude_set
-            @connection.add_exclude_array(column_name.to_s, exclude_values)
-          end
-        end
 
         select_rows = convert_select_columns_to_array_of_columns(options[:select], options[:columns])
 
         t1 = Time.now
-        rows = @connection.full_select(select_rows, options[:limit])
+        table_name = options[:table_name]
+        scan_spec = convert_options_to_scan_spec(options)
+        cells = @connection.get_cells(table_name, scan_spec)
         @@read_latency += Time.now - t1
 
-        rows = convert_to_hashes(rows)
-        rows
+        cells
       end
 
-      def convert_to_hashes(rows)
-        # strip out nil values in the result set
-        rows.map{|r| {'ROW' => r.first}.merge(r.last) }
+      def convert_options_to_scan_spec(options={})
+        scan_spec = Hypertable::ThriftGen::ScanSpec.new
+        options[:revs] ||= 1
+        options[:return_deletes] ||= false
+
+        for key in options.keys
+          case key.to_sym
+            when :row_intervals
+              scan_spec.row_intervals = options[key]
+            when :cell_intervals
+              scan_spec.cell_intervals = options[key]
+            when :start_time
+              scan_spec.start_time = options[key]
+            when :end_time
+              scan_spec.end_time = options[key]
+            when :limit
+              scan_spec.row_limit = options[key]
+            when :revs
+              scan_spec.revs = options[key]
+            when :return_deletes
+              scan_spec.return_deletes = options[key]
+            when :table_name, :start_row, :end_row, :start_inclusive, :end_inclusive, :select, :columns, :row_keys, :conditions, :include
+              # ignore
+            else
+              raise "Unrecognized scan spec option: #{key}"
+          end
+        end
+
+        scan_spec
       end
 
       def execute(hql, name=nil)
-        log(hql, name) { @connection.run_hql(hql) }
+        log(hql, name) { @connection.hql_query(hql) }
       end
 
       # Returns array of column objects for table associated with this class.
@@ -226,40 +253,66 @@ module ActiveRecord
       end
 
       def describe_table(table_name)
-        @connection.describe_table(table_name)
+        @connection.get_schema(table_name)
       end
 
       def tables(name=nil)
-        @connection.show_tables
+        @connection.get_tables
       end
 
       def drop_table(table_name, options = {})
-        @connection.drop_table(table_name)
+        @connection.drop_table(table_name, options[:if_exists] || false)
       end
 
-      def write_cells(cells, table=nil)
-        @connection.open_table(table) if table
+      def write_cells(table_name, cells)
+        return if cells.blank?
+
+        @connection.with_mutator(table_name) do |mutator|
+          t1 = Time.now
+          @connection.set_cells(mutator, cells.map{|c| cell_from_array(c)})
+          @@write_latency += Time.now - t1
+        end
+      end
+
+      # Cell passed in as [row_key, column_name, value]
+      def cell_from_array(array)
+        cell = Hypertable::ThriftGen::Cell.new
+        cell.row_key = array[0]
+        column_family, column_qualifier = array[1].split(':')
+        cell.column_family = column_family
+        cell.column_qualifier = column_qualifier if column_qualifier
+        cell.value = array[2] if array[2]
+        cell
+      end
+
+      def delete_cells(table_name, cells)
         t1 = Time.now
-        @connection.write_cells(cells)
+
+        @connection.with_mutator(table_name) do |mutator|
+          @connection.set_cells(mutator, cells.map{|c|
+            cell = cell_from_array(c)
+            cell.flag = CELL_FLAG_DELETE_CELL
+            cell
+          })
+        end
+
         @@write_latency += Time.now - t1
       end
 
-      def delete_cells(cells, table=nil)
-        @connection.open_table(table) if table
+      def delete_rows(table_name, row_keys)
         t1 = Time.now
-        @connection.delete_cells(cells)
-        @@write_latency += Time.now - t1
-      end
+        cells = row_keys.map do |row_key|
+          cell = Hypertable::ThriftGen::Cell.new
+          cell.row_key = row_key
+          cell.flag = CELL_FLAG_DELETE_ROW
+          cell
+        end
 
-      def delete_rows(row_keys, table=nil)
-        @connection.open_table(table) if table
-        t1 = Time.now
-        @connection.delete_rows(row_keys)
-        @@write_latency += Time.now - t1
-      end
+        @connection.with_mutator(table_name) do |mutator|
+          @connection.set_cells(mutator, cells)
+        end
 
-      def open_table(table_name)
-        @connection.open_table(table_name)
+        @@write_latency += Time.now - t1
       end
 
       def insert_fixture(fixture, table_name)
@@ -267,8 +320,7 @@ module ActiveRecord
         row_key = fixture_hash.delete('ROW')
         cells = []
         fixture_hash.keys.each{|k| cells << [row_key, k, fixture_hash[k]]}
-        open_table(table_name)
-        write_cells(cells)
+        write_cells(table_name, cells)
       end
 
       private
