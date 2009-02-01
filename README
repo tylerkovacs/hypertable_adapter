@@ -1,7 +1,85 @@
 hypertable_adapter
 ==================
 
-Description goes here.
+Hypertable Adapter allows ActiveRecord to communicate with Hypertable.
+
+In ActiveRecord, each supported data store has an adapter that implements
+functionality specific to that store as well as providing metadata for
+data held within the store.  Features implemented by adapters typically
+include:
+
+  * connection handling
+  * list of tables
+  * list of columns per data
+  * low-level support for qualified columns
+  * statement execution (selects, writes, etc.)
+  * latency measurement
+  * fixture handling
+
+The adapter provides low-level integration between Hypertable and
+ActiveRecord.  A separate library called HyperRecord is required to fully 
+integrate the two.
+
+Basic Hypertable Adapter Configuration
+======================================
+
+TODO: Replace the following documentation when the Adapter is rewritten
+to use Thrift (instead of RICE).
+
+Before creating a HyperRecord class, you must declare a hypertable 
+connection in config/database.yml
+
+ hypertable:
+   adapter: hypertable
+   executable: /opt/hypertable/current/bin/hypertable
+   configuration_file: config/environments/hypertable.cfg
+
+Or, if you need to do it in code outside of database.yml:
+
+ ActiveRecord::Base.configurations['hypertable'] = {
+   'adapter' => 'hypertable',
+   'executable' => '/opt/hypertable/current/bin/hypertable',
+   'configuration_file' => 'config/environments/hypertable.cfg'
+ }
+
+The key named 'executable' refers to the absolute path of the Hypertable 
+client executable. The key named 'configuration_file' refers to the 
+relative path of the Hypertable client configuration file. This file tells 
+the client where to find the Hypertable cluster, specifies default 
+timeouts, etc.
+
+ #
+ # hypertable.cfg
+ #
+ # Global properties
+ Hypertable.Request.Timeout=180
+ #
+ # HDFS Broker
+ HdfsBroker.Port=38030
+ HdfsBroker.fs.default.name=hdfs://localhost:9000
+ HdfsBroker.Workers=20
+ #
+ # Local Broker
+ DfsBroker.Local.Port=38030
+ DfsBroker.Local.Root=fs/local
+ #
+ # DFS Broker - for clients
+ DfsBroker.Host=localhost
+ DfsBroker.Port=38030
+ #
+ # Hyperspace
+ Hyperspace.Master.Host=localhost
+ Hyperspace.Master.Port=38040
+ Hyperspace.Master.Dir=hyperspace
+ Hyperspace.Master.Workers=20
+ #
+ # Hypertable.Master
+ Hypertable.Master.Host=localhost
+ Hypertable.Master.Port=38050
+ Hypertable.Master.Workers=20
+ #
+ # Hypertable.RangeServer
+ Hypertable.RangeServer.Port=38060
 
 COPYRIGHT
 =========

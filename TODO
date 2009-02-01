@@ -1,0 +1,4 @@
+- push initial release to github
+- make sure tests run
+- rewrite README for new config
+- test gem builds
