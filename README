@@ -23,12 +23,12 @@ integrate the two.
 Basic Hypertable Adapter Configuration
 ======================================
 
-Before creating a HyperRecord class, you must declare a hypertable 
-connection in config/database.yml.  HyperRecord communicates with 
-Hypertable using a Thrift Broker (see http://hypertable.org/documentation.html
-for details) which is part of the main Hypertable installation.  The 
-connection record in config/database.yml must identify the host name and 
-the port used by the Thrift Broker:
+Before using the adapter, you must declare a hypertable connection in
+config/database.yml.  The adapter communicates with Hypertable using a
+Thrift Broker (see http://hypertable.org/documentation.html for details)
+which is part of the main Hypertable installation.  The connection record
+in config/database.yml must identify the host name and the port used by
+the Thrift Broker:
 
  hypertable:
    adapter: hypertable
