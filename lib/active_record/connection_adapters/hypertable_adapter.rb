@@ -143,7 +143,7 @@ module ActiveRecord
         rescue Exception => err
           if !err.message
             if err.respond_to?("message=")
-              err.message ||= err.what || ''
+              err.message = err.what || ''
             else
               def err.message
                 self.what || ''
