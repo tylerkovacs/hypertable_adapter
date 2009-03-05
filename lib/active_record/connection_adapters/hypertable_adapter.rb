@@ -29,11 +29,6 @@ module ActiveRecord
       @@write_latency = 0.0
       cattr_accessor :read_latency, :write_latency
 
-      CELL_FLAG_DELETE_ROW = 0
-      CELL_FLAG_DELETE_COLUMN_FAMILY = 1
-      CELL_FLAG_DELETE_CELL = 2
-      CELL_FLAG_INSERT = 255
-
       def initialize(connection, logger, config)
         super(connection, logger)
         @config = config
@@ -292,7 +287,7 @@ module ActiveRecord
         @connection.with_mutator(table_name) do |mutator|
           @connection.set_cells(mutator, cells.map{|c|
             cell = cell_from_array(c)
-            cell.flag = CELL_FLAG_DELETE_CELL
+            cell.flag = Hypertable::ThriftGen::CellFlag::DELETE_CELL
             cell
           })
         end
@@ -305,7 +300,7 @@ module ActiveRecord
         cells = row_keys.map do |row_key|
           cell = Hypertable::ThriftGen::Cell.new
           cell.row_key = row_key
-          cell.flag = CELL_FLAG_DELETE_ROW
+          cell.flag = Hypertable::ThriftGen::CellFlag::DELETE_ROW
           cell
         end
 
