@@ -15,7 +15,8 @@ module ActiveRecord
       config = config.symbolize_keys
       require_hypertable_thrift_client
 
-      raise "Hypertable/ThriftBroker config missing :host" if !config[:host]
+      raise "Hypertable/ThriftClient config missing :host (normally set in config/database.yml)" if !config[:host]
+      raise "Hypertable/ThriftClient config missing :port (normally set in config/database.yml)" if !config[:host]
       connection = Hypertable::ThriftClient.new(config[:host], config[:port])
 
       ConnectionAdapters::HypertableAdapter.new(connection, logger, config)
