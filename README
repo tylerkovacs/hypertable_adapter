@@ -1,3 +1,6 @@
+NOTE: This code is now bundled in HyperRecord (as of version 0.2.0), so you 
+don't need to install it separately anymore.
+
 hypertable_adapter
 ==================
 
