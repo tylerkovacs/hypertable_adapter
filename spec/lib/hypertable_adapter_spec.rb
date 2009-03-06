@@ -112,6 +112,17 @@ module ActiveRecord
           @h.convert_select_columns_to_array_of_columns("*").should == []
         end
       end
+
+      describe HypertableAdapter, '.create_table_sql' do
+        it "should assemble correct hql for creating a table" do
+          hql = @h.create_table_hql :new_table do |t|
+            t.column :name, :string
+            t.column :value, :string, :max_versions => 1
+          end
+
+          hql.should == "CREATE TABLE 'new_table' ( 'name' , 'value' MAX_VERSIONS=1 )"
+        end
+      end
     end
   end
 end
